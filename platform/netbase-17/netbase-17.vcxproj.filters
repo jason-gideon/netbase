@@ -1,0 +1,123 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="thrid">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="thrid\libevent">
+      <UniqueIdentifier>{f3e1240d-e4af-4f62-afe5-921d1c5a0d01}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="thrid\libevent\event2">
+      <UniqueIdentifier>{24633c84-4621-4db4-b9c2-506a01a1ffb1}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\thrid\libevent\include\evdns.h">
+      <Filter>thrid\libevent</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\thrid\libevent\include\event.h">
+      <Filter>thrid\libevent</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\thrid\libevent\include\evhttp.h">
+      <Filter>thrid\libevent</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\thrid\libevent\include\evrpc.h">
+      <Filter>thrid\libevent</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\thrid\libevent\include\evutil.h">
+      <Filter>thrid\libevent</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\thrid\libevent\include\event2\buffer.h">
+      <Filter>thrid\libevent\event2</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\thrid\libevent\include\event2\buffer_compat.h">
+      <Filter>thrid\libevent\event2</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\thrid\libevent\include\event2\bufferevent.h">
+      <Filter>thrid\libevent\event2</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\thrid\libevent\include\event2\bufferevent_compat.h">
+      <Filter>thrid\libevent\event2</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\thrid\libevent\include\event2\bufferevent_ssl.h">
+      <Filter>thrid\libevent\event2</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\thrid\libevent\include\event2\bufferevent_struct.h">
+      <Filter>thrid\libevent\event2</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\thrid\libevent\include\event2\dns.h">
+      <Filter>thrid\libevent\event2</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\thrid\libevent\include\event2\dns_compat.h">
+      <Filter>thrid\libevent\event2</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\thrid\libevent\include\event2\dns_struct.h">
+      <Filter>thrid\libevent\event2</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\thrid\libevent\include\event2\event.h">
+      <Filter>thrid\libevent\event2</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\thrid\libevent\include\event2\event_compat.h">
+      <Filter>thrid\libevent\event2</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\thrid\libevent\include\event2\event_struct.h">
+      <Filter>thrid\libevent\event2</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\thrid\libevent\include\event2\http.h">
+      <Filter>thrid\libevent\event2</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\thrid\libevent\include\event2\http_compat.h">
+      <Filter>thrid\libevent\event2</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\thrid\libevent\include\event2\http_struct.h">
+      <Filter>thrid\libevent\event2</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\thrid\libevent\include\event2\keyvalq_struct.h">
+      <Filter>thrid\libevent\event2</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\thrid\libevent\include\event2\listener.h">
+      <Filter>thrid\libevent\event2</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\thrid\libevent\include\event2\rpc.h">
+      <Filter>thrid\libevent\event2</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\thrid\libevent\include\event2\rpc_compat.h">
+      <Filter>thrid\libevent\event2</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\thrid\libevent\include\event2\rpc_struct.h">
+      <Filter>thrid\libevent\event2</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\thrid\libevent\include\event2\tag.h">
+      <Filter>thrid\libevent\event2</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\thrid\libevent\include\event2\tag_compat.h">
+      <Filter>thrid\libevent\event2</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\thrid\libevent\include\event2\thread.h">
+      <Filter>thrid\libevent\event2</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\thrid\libevent\include\event2\util.h">
+      <Filter>thrid\libevent\event2</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\thrid\libevent\include\event2\visibility.h">
+      <Filter>thrid\libevent\event2</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\thrid\libevent\include\event2\watch.h">
+      <Filter>thrid\libevent\event2</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>
