@@ -21,9 +21,13 @@
 #include <event2/util.h>
 #include <event2/event.h>
 
+#include "evt_loop.h"
+
 int main()
 {
     std::cout << "Hello World!\n";
+
+    evt_loop loop;
 
 
     struct event_base *base;

@@ -164,7 +164,9 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="evt_loop.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="task_base.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\thrid\libevent\include\evdns.h" />
@@ -198,6 +200,8 @@
     <ClInclude Include="..\..\thrid\libevent\include\evhttp.h" />
     <ClInclude Include="..\..\thrid\libevent\include\evrpc.h" />
     <ClInclude Include="..\..\thrid\libevent\include\evutil.h" />
+    <ClInclude Include="evt_loop.h" />
+    <ClInclude Include="task_base.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
