@@ -165,6 +165,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="evt_loop.cpp" />
+    <ClCompile Include="evt_watcher.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="task_base.cpp" />
   </ItemGroup>
@@ -201,6 +202,7 @@
     <ClInclude Include="..\..\thrid\libevent\include\evrpc.h" />
     <ClInclude Include="..\..\thrid\libevent\include\evutil.h" />
     <ClInclude Include="evt_loop.h" />
+    <ClInclude Include="evt_watcher.h" />
     <ClInclude Include="task_base.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

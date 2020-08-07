@@ -27,7 +27,7 @@ int main()
 {
     std::cout << "Hello World!\n";
 
-    evt_loop loop;
+    netb::evt_loop loop;
 
 
     struct event_base *base;

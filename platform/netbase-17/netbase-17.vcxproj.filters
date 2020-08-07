@@ -30,6 +30,9 @@
     <ClCompile Include="task_base.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="evt_watcher.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\thrid\libevent\include\evdns.h">
@@ -129,6 +132,9 @@
       <Filter>include</Filter>
     </ClInclude>
     <ClInclude Include="task_base.h">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="evt_watcher.h">
       <Filter>include</Filter>
     </ClInclude>
   </ItemGroup>
