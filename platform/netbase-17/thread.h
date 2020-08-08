@@ -32,6 +32,25 @@ namespace netb {
 		void setup_thread(LIBEVENT_THREAD *me);
 	
 	protected:
+		void wait_for_thread_registration(int nthreads);
+
+		static void register_thread_initialized(void);
+
+
+		/*
+		 * Creates a worker thread.
+		 */
+		static void create_worker(void *(*func)(void *), void *arg);
+
+		/*
+		 * Worker thread: main event loop
+		 */
+		static void *worker_libevent(void *arg);
+
+		/*
+		 * Processes an incoming "handle a new connection" item. This is called when
+		 * input arrives on the libevent wakeup pipe.
+		 */
 		static void thread_libevent_process(int fd, short which, void *arg);
 	protected:
 		/* Connection lock around accepting new connections */
@@ -51,6 +70,13 @@ namespace netb {
 		/* size of the item lock hash table */
 		static uint32_t item_lock_count;
 		unsigned int item_lock_hashpower;
+
+		/*
+		 * Number of worker threads that have finished setting themselves up.
+		 */
+		static int init_count;
+		static std::mutex init_lock;
+		static std::condition_variable init_cond;
 	
 	
 		/*
