@@ -172,8 +172,8 @@ namespace netb {
 
 	void thread::create_worker(void *(*func)(void *), void *arg)
 	{
-		std::thread worker(func, arg);
-		((LIBEVENT_THREAD*)arg)->thread_id = worker.get_id();
+		std::thread* worker = new std::thread(func, arg);
+		((LIBEVENT_THREAD*)arg)->thread_id = worker->get_id();
 	}
 
 	void * thread::worker_libevent(void *arg)

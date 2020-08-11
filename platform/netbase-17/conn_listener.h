@@ -7,8 +7,10 @@
 class conn_listener {
 public:
 
+	int init();
 
 protected:
+	void maximize_sndbuf(const int sfd);
 
 	int new_socket(struct addrinfo *ai);
 
