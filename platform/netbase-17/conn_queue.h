@@ -15,15 +15,12 @@ public:
 	T *cq_pop();
 	void cq_push(T*item);
 
-	T *cqi_new(void);
-
-	void cqi_free(T *item);
 private:
 	T* head;
 	T* tail;
 	std::mutex lock;
-	std::mutex cqi_freelist_lock;
-	static T *cqi_freelist;
+	//std::mutex cqi_freelist_lock;
+	//static T *cqi_freelist;
 };
 
 
@@ -38,58 +35,6 @@ void conn_queue<T>::cq_init()
 {
 	head = nullptr;
 	tail = nullptr;
-}
-
-template <typename T>
-void conn_queue<T>::cqi_free(T *item)
-{
-	std::lock_guard<std::mutex> guard(cqi_freelist_lock);
-	item->next = cqi_freelist;
-	cqi_freelist = item;
-}
-
-template <typename T>
-T * conn_queue<T>::cqi_new(void)
-{
-	T *item = nullptr;
-
-	{
-		std::lock_guard<std::mutex> guard(cqi_freelist_lock);
-		if (cqi_freelist) {
-			item = cqi_freelist;
-			cqi_freelist = item->next;
-		}
-	}
-
-	if (nullptr == item) {
-		int i;
-
-		/* Allocate a bunch of items at once to reduce fragmentation */
-		item = malloc(sizeof(T) * ITEMS_PER_ALLOC);
-		if (nullptr == item) {
-			// 			STATS_LOCK();
-			// 			stats.malloc_fails++;
-			// 			STATS_UNLOCK();
-			return nullptr;
-		}
-
-		/*
-		 * Link together all the new items except the first one
-		 * (which we'll return to the caller) for placement on
-		 * the freelist.
-		 */
-		for (i = 2; i < ITEMS_PER_ALLOC; i++)
-			item[i - 1].next = &item[i];
-
-		{
-			std::lock_guard<std::mutex> guard(cqi_freelist_lock);
-			item[ITEMS_PER_ALLOC - 1].next = cqi_freelist;
-			cqi_freelist = &item[1];
-		}
-
-	}
-
-	return item;
 }
 
 /*

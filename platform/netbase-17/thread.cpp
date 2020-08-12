@@ -2,6 +2,10 @@
 
 namespace netb {
 
+	CQ_ITEM * thread::cqi_freelist = nullptr;
+
+	std::mutex thread::cqi_freelist_lock;
+
 	int thread::init_count = 0;
   std::mutex thread::init_lock;
 	std::condition_variable thread::init_cond;
@@ -150,6 +154,44 @@ namespace netb {
 #endif
 	}
 
+
+	/* Which thread we assigned a connection to most recently. */
+	static int last_thread = -1;
+	void thread::dispatch_conn_new(int sfd, enum conn_states init_state, int event_flags, int read_buffer_size, enum network_transport transport, void *ssl)
+	{
+		CQ_ITEM *item = cqi_new();
+		char buf[1];
+		if (item == NULL) {
+			socket_destroy(sfd);
+			/* given that malloc failed this may also fail, but let's try */
+			fprintf(stderr, "Failed to allocate memory for connection object\n");
+			return;
+		}
+
+		int tid = (last_thread + 1) % 4;
+
+		LIBEVENT_THREAD *thread = &threads[tid];
+
+		last_thread = tid;
+
+		item->sfd = sfd;
+		item->init_state = init_state;
+		item->event_flags = event_flags;
+		item->read_buffer_size = read_buffer_size;
+		item->transport = transport;
+		item->mode = queue_new_conn;
+		item->ssl = ssl;
+
+		thread->new_conn_queue->cq_push(item);
+		//cq_push(thread->new_conn_queue, item);
+
+		//MEMCACHED_CONN_DISPATCH(sfd, (int64_t)thread->thread_id);
+		buf[0] = 'c';
+		if (socket_write(thread->notify_send_fd, buf, 1) != 1) {
+			perror("Writing to thread notify pipe");
+		}
+	}
+
 	void thread::wait_for_thread_registration(int nthreads)
 	{
 		std::unique_lock<std::mutex> lck(init_lock);
@@ -294,5 +336,55 @@ namespace netb {
 		}
 	}
 
+
+	CQ_ITEM * thread::cqi_new(void)
+	{
+		CQ_ITEM *item = nullptr;
+
+		{
+			std::lock_guard<std::mutex> guard(cqi_freelist_lock);
+			if (cqi_freelist) {
+				item = cqi_freelist;
+				cqi_freelist = item->next;
+			}
+		}
+
+		if (nullptr == item) {
+			int i;
+
+			/* Allocate a bunch of items at once to reduce fragmentation */
+			item = (CQ_ITEM*)malloc(sizeof(CQ_ITEM) * ITEMS_PER_ALLOC);
+			if (nullptr == item) {
+				// 			STATS_LOCK();
+				// 			stats.malloc_fails++;
+				// 			STATS_UNLOCK();
+				return nullptr;
+			}
+
+			/*
+			 * Link together all the new items except the first one
+			 * (which we'll return to the caller) for placement on
+			 * the freelist.
+			 */
+			for (i = 2; i < ITEMS_PER_ALLOC; i++)
+				item[i - 1].next = &item[i];
+
+			{
+				std::lock_guard<std::mutex> guard(cqi_freelist_lock);
+				item[ITEMS_PER_ALLOC - 1].next = cqi_freelist;
+				cqi_freelist = &item[1];
+			}
+
+		}
+
+		return item;
+	}
+
+	void thread::cqi_free(CQ_ITEM *item)
+	{
+		std::lock_guard<std::mutex> guard(cqi_freelist_lock);
+		item->next = cqi_freelist;
+		cqi_freelist = item;
+	}
 
 }

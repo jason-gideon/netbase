@@ -138,11 +138,18 @@
 
 
 #define EX__MAX 78      /* maximum listed value */
+
+
+typedef unsigned int size_t;
+typedef int  ssize_t;
+
 #define socket_destroy(fd) closesocket(fd)
 #define socket_read(fd, buf, len) recv(fd, buf, sizeof buf, 0)
+#define socket_write(fd, buf, len) send(fd, buf, sizeof buf, 0)
 #else
 #define socket_destroy(fd) close(fd)
 #define socket_read(fd, buf, len) read(fd, buf, sizeof buf)
+#define socket_write(fd, buf, len) write(fd, buf, sizeof buf)
 #endif // !_WIN32
 
 
@@ -777,81 +784,81 @@ typedef struct _io_wrap {
  */
 struct conn {
 //	sasl_conn_t *sasl_conn;
-//	int    sfd;
-//	bool sasl_started;
-//	bool authenticated;
-//	bool set_stale;
-//	bool mset_res; /** uses mset format for return code */
-//	bool close_after_write; /** flush write then move to close connection */
-//	bool rbuf_malloced; /** read buffer was malloc'ed for ascii mget, needs free() */
-//#ifdef TLS
-//	SSL    *ssl;
-//	char   *ssl_wbuf;
-//	bool ssl_enabled;
-//#endif
-//	enum conn_states  state;
+	int    sfd;
+	bool sasl_started;
+	bool authenticated;
+	bool set_stale;
+	bool mset_res; /** uses mset format for return code */
+	bool close_after_write; /** flush write then move to close connection */
+	bool rbuf_malloced; /** read buffer was malloc'ed for ascii mget, needs free() */
+#ifdef TLS
+	SSL    *ssl;
+	char   *ssl_wbuf;
+	bool ssl_enabled;
+#endif
+	enum conn_states  state;
 //	enum bin_substates substate;
 //	rel_time_t last_cmd_time;
-//	struct event event;
-//	short  ev_flags;
-//	short  which;   /** which events were just triggered */
-//
-//	char   *rbuf;   /** buffer to read commands into */
-//	char   *rcurr;  /** but if we parsed some already, this is where we stopped */
-//	int    rsize;   /** total allocated size of rbuf */
-//	int    rbytes;  /** how much data, starting from rcur, do we have unparsed */
-//
+	struct event event;
+	short  ev_flags;
+	short  which;   /** which events were just triggered */
+
+	char   *rbuf;   /** buffer to read commands into */
+	char   *rcurr;  /** but if we parsed some already, this is where we stopped */
+	int    rsize;   /** total allocated size of rbuf */
+	int    rbytes;  /** how much data, starting from rcur, do we have unparsed */
+
 //	mc_resp *resp; // tail response.
 //	mc_resp *resp_head; // first response in current stack.
-//	char   *ritem;  /** when we read in an item's value, it goes here */
-//	int    rlbytes;
-//
-//	/**
-//	 * item is used to hold an item structure created after reading the command
-//	 * line of set/add/replace commands, but before we finished reading the actual
-//	 * data. The data is read into ITEM_data(item) to avoid extra copying.
-//	 */
-//
-//	void   *item;     /* for commands set/add/replace  */
-//
-//	/* data for the swallow state */
-//	int    sbytes;    /* how many bytes to swallow */
-//
-//#ifdef EXTSTORE
-//	int io_wrapleft;
-//	unsigned int recache_counter;
-//	io_wrap *io_wraplist; /* linked list of io_wraps */
-//	bool io_queued; /* FIXME: debugging flag */
-//#endif
+	char   *ritem;  /** when we read in an item's value, it goes here */
+	int    rlbytes;
+
+	/**
+	 * item is used to hold an item structure created after reading the command
+	 * line of set/add/replace commands, but before we finished reading the actual
+	 * data. The data is read into ITEM_data(item) to avoid extra copying.
+	 */
+
+	void   *item;     /* for commands set/add/replace  */
+
+	/* data for the swallow state */
+	int    sbytes;    /* how many bytes to swallow */
+
+#ifdef EXTSTORE
+	int io_wrapleft;
+	unsigned int recache_counter;
+	io_wrap *io_wraplist; /* linked list of io_wraps */
+	bool io_queued; /* FIXME: debugging flag */
+#endif
 //	enum protocol protocol;   /* which protocol this connection speaks */
-//	enum network_transport transport; /* what transport is used by this connection */
-//
-//	/* data for UDP clients */
-//	int    request_id; /* Incoming UDP request ID, if this is a UDP "connection" */
-//	struct sockaddr_in6 request_addr; /* udp: Who sent the most recent request */
-//	socklen_t request_addr_size;
-//
-//	bool   noreply;   /* True if the reply should not be sent. */
-//	/* current stats command */
-//	struct {
-//		char *buffer;
-//		size_t size;
-//		size_t offset;
-//	} stats;
-//
+	enum network_transport transport; /* what transport is used by this connection */
+
+	/* data for UDP clients */
+	int    request_id; /* Incoming UDP request ID, if this is a UDP "connection" */
+	struct sockaddr_in6 request_addr; /* udp: Who sent the most recent request */
+	socklen_t request_addr_size;
+
+	bool   noreply;   /* True if the reply should not be sent. */
+	/* current stats command */
+	struct {
+		char *buffer;
+		size_t size;
+		size_t offset;
+	} stats;
+
 //	/* Binary protocol stuff */
 //	/* This is where the binary header goes */
 //	protocol_binary_request_header binary_header;
-//	uint64_t cas; /* the cas to return */
-//	short cmd; /* current command being processed */
-//	int opaque;
-//	int keylen;
+	uint64_t cas; /* the cas to return */
+	short cmd; /* current command being processed */
+	int opaque;
+	int keylen;
 	conn   *next;     /* Used for generating a list of conn structures */
 	LIBEVENT_THREAD *thread; /* Pointer to the thread object serving this connection */
-//	int(*try_read_command)(conn *c); /* pointer for top level input parser */
-//	ssize_t(*read)(conn  *c, void *buf, size_t count);
-//	ssize_t(*sendmsg)(conn *c, struct msghdr *msg, int flags);
-//	ssize_t(*write)(conn *c, void *buf, size_t count);
+	int(*try_read_command)(conn *c); /* pointer for top level input parser */
+	ssize_t(*read)(conn  *c, void *buf, size_t count);
+	ssize_t(*sendmsg)(conn *c, struct msghdr *msg, int flags);
+	ssize_t(*write)(conn *c, void *buf, size_t count);
 };
 //
 ///* array of conn structures, indexed by file descriptor */

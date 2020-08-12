@@ -31,6 +31,9 @@ namespace netb {
 		void memcached_thread_init(int nthreads, void *arg);
 		void setup_thread(LIBEVENT_THREAD *me);
 	
+		void dispatch_conn_new(int sfd, enum conn_states init_state, int event_flags,
+			int read_buffer_size, enum network_transport transport, void *ssl);
+
 	protected:
 		void wait_for_thread_registration(int nthreads);
 
@@ -52,6 +55,11 @@ namespace netb {
 		 * input arrives on the libevent wakeup pipe.
 		 */
 		static void thread_libevent_process(int fd, short which, void *arg);
+
+
+		static CQ_ITEM *cqi_new(void);
+
+		static void cqi_free(CQ_ITEM *item);
 	protected:
 		/* Connection lock around accepting new connections */
 		std::mutex conn_lock;
@@ -63,8 +71,8 @@ namespace netb {
 		std::mutex  worker_hang_lock;
 	
 		/* Free list of CQ_ITEM structs */
-// 		static CQ_ITEM *cqi_freelist;
-// 		std::mutex  cqi_freelist_lock;
+		static CQ_ITEM *cqi_freelist;
+		static std::mutex  cqi_freelist_lock;
 	
 		std::mutex  *item_locks;
 		/* size of the item lock hash table */
