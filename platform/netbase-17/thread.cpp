@@ -3,7 +3,7 @@
 namespace netb {
 
 	int thread::init_count = 0;
-	std::mutex thread::init_lock;
+  std::mutex thread::init_lock;
 	std::condition_variable thread::init_cond;
 
 	thread::thread(int nthreads) {

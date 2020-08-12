@@ -14,6 +14,8 @@
 #include <mutex>
 #include <atomic>
 #include <functional>
+#include <condition_variable>
+
 
 #ifdef _WIN32
 
@@ -136,9 +138,10 @@
 
 
 #define EX__MAX 78      /* maximum listed value */
-
+#define socket_destroy(fd) closesocket(fd)
 #define socket_read(fd, buf, len) recv(fd, buf, sizeof buf, 0)
 #else
+#define socket_destroy(fd) close(fd)
 #define socket_read(fd, buf, len) read(fd, buf, sizeof buf)
 #endif // !_WIN32
 
@@ -843,8 +846,8 @@ struct conn {
 //	short cmd; /* current command being processed */
 //	int opaque;
 //	int keylen;
-//	conn   *next;     /* Used for generating a list of conn structures */
-//	LIBEVENT_THREAD *thread; /* Pointer to the thread object serving this connection */
+	conn   *next;     /* Used for generating a list of conn structures */
+	LIBEVENT_THREAD *thread; /* Pointer to the thread object serving this connection */
 //	int(*try_read_command)(conn *c); /* pointer for top level input parser */
 //	ssize_t(*read)(conn  *c, void *buf, size_t count);
 //	ssize_t(*sendmsg)(conn *c, struct msghdr *msg, int flags);

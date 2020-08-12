@@ -27,11 +27,29 @@ bool safe_strtol(const char *str, int32_t *out) {
 }
 
 
+bool conn_listener::stop_main_loop = false;
+conn * conn_listener::listen_conn = nullptr;
+struct event_base * conn_listener::main_base = nullptr;
 
 int conn_listener::init()
 {
 	memset(&settings, 0, sizeof settings);
 	settings.port = 11211;
+
+  /* initialize main thread libevent instance */
+#if defined(LIBEVENT_VERSION_NUMBER) && LIBEVENT_VERSION_NUMBER >= 0x02000101
+    /* If libevent version is larger/equal to 2.0.2-alpha, use newer version */
+  struct event_config *ev_config;
+  ev_config = event_config_new();
+  event_config_set_flag(ev_config, EVENT_BASE_FLAG_NOLOCK);
+  main_base = event_base_new_with_config(ev_config);
+  event_config_free(ev_config);
+#else
+    /* Otherwise, use older API */
+  main_base = event_init();
+#endif
+
+
 
 	/* create the listening socket, bind it, and init */
 	if (settings.socketpath == NULL) {
@@ -86,6 +104,28 @@ int conn_listener::init()
 
 }
 
+
+void conn_listener::loop()
+{
+  /* enter the event loop */
+  while (!stop_main_loop) {
+    if (event_base_loop(main_base, EVLOOP_ONCE) != 0) {
+      //retval = EXIT_FAILURE;
+      break;
+    }
+  }
+}
+
+conn * conn_listener::conn_new(const int sfd, const enum conn_states init_state, const int event_flags, const int read_buffer_size, enum network_transport transport, struct event_base *base, void *ssl)
+{
+  return nullptr;
+}
+
+void conn_listener::dispatch_conn_new(int sfd, enum conn_states init_state, int event_flags, int read_buffer_size, enum network_transport transport, void *ssl)
+{
+
+}
+
 void conn_listener::maximize_sndbuf(const int sfd)
 {
 	socklen_t intsize = sizeof(int);
@@ -127,6 +167,23 @@ int conn_listener::new_socket(struct addrinfo *ai)
 	if ((sfd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol)) == -1) {
 		return -1;
 	}
+#ifndef _WIN32
+  if ((flags = fcntl(sfd, F_GETFL, 0)) < 0 ||
+    fcntl(sfd, F_SETFL, flags | O_NONBLOCK) < 0) {
+    perror("setting O_NONBLOCK");
+    close(sfd);
+    return -1;
+  }
+#else
+  unsigned int nonblocking = -1;
+  if (ioctlsocket(sfd, FIONBIO, (u_long*)&nonblocking) != 0) {
+    perror("setting O_NONBLOCK");
+    socket_destroy(sfd);
+    return -1;
+  }
+#endif
+
+  return sfd;
 }
 
 int conn_listener::server_socket(const char *interfaces,
@@ -159,7 +216,7 @@ int conn_listener::server_socket(const char *interfaces,
 	}
 	snprintf(port_buf, sizeof(port_buf), "%d", port);
 	//error = getaddrinfo(interfaces, port_buf, &hints, &ai);
-	error = getaddrinfo("192.168.101.9", port_buf, &hints, &ai);
+	error = getaddrinfo("10.18.60.48", port_buf, &hints, &ai);
 	if (error != 0) {
 #ifndef _WIN32
 		if (error != EAI_SYSTEM)
@@ -191,13 +248,11 @@ int conn_listener::server_socket(const char *interfaces,
 			error = setsockopt(sfd, IPPROTO_IPV6, IPV6_V6ONLY, (char *)&flags, sizeof(flags));
 			if (error != 0) {
 				perror("setsockopt");
-				//close(sfd);
-				closesocket(sfd);
+        socket_destroy(sfd);
 				continue;
 			}
 		}
 #endif
-
 
 		setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, (const char *)&flags, sizeof(flags));
 		if (IS_UDP(transport)) {
@@ -220,52 +275,100 @@ int conn_listener::server_socket(const char *interfaces,
 		if (bind(sfd, next->ai_addr, next->ai_addrlen) == -1) {
 			if (errno != EADDRINUSE) {
 				perror("bind()");
-				closesocket(sfd);
+        socket_destroy(sfd);
 				freeaddrinfo(ai);
 				return 1;
 			}
-			closesocket(sfd);
+      socket_destroy(sfd);
 			continue;
 		}
-		else {
-			success++;
-			if (!IS_UDP(transport) && listen(sfd, settings.backlog) == -1) {
-				perror("listen()");
-				closesocket(sfd);
-				freeaddrinfo(ai);
-				return 1;
-			}
-			if (portnumber_file != NULL &&
-				(next->ai_addr->sa_family == AF_INET ||
-					next->ai_addr->sa_family == AF_INET6)) {
-				union {
-					struct sockaddr_in in;
-					struct sockaddr_in6 in6;
-				} my_sockaddr;
-				socklen_t len = sizeof(my_sockaddr);
-				if (getsockname(sfd, (struct sockaddr*)&my_sockaddr, &len) == 0) {
-					if (next->ai_addr->sa_family == AF_INET) {
-						fprintf(portnumber_file, "%s INET: %u\n",
-							IS_UDP(transport) ? "UDP" : "TCP",
-							ntohs(my_sockaddr.in.sin_port));
-					}
-					else {
-						fprintf(portnumber_file, "%s INET6: %u\n",
-							IS_UDP(transport) ? "UDP" : "TCP",
-							ntohs(my_sockaddr.in6.sin6_port));
-					}
-				}
-			}
+    else {
+      success++;
+      if (!IS_UDP(transport) && listen(sfd, settings.backlog) == -1) {
+        perror("listen()");
+        socket_destroy(sfd);
+        freeaddrinfo(ai);
+        return 1;
+      }
+      if (portnumber_file != NULL &&
+        (next->ai_addr->sa_family == AF_INET ||
+          next->ai_addr->sa_family == AF_INET6)) {
+        union {
+          struct sockaddr_in in;
+          struct sockaddr_in6 in6;
+        } my_sockaddr;
+        socklen_t len = sizeof(my_sockaddr);
+        if (getsockname(sfd, (struct sockaddr*)&my_sockaddr, &len) == 0) {
+          if (next->ai_addr->sa_family == AF_INET) {
+            fprintf(portnumber_file, "%s INET: %u\n",
+              IS_UDP(transport) ? "UDP" : "TCP",
+              ntohs(my_sockaddr.in.sin_port));
+          }
+          else {
+            fprintf(portnumber_file, "%s INET6: %u\n",
+              IS_UDP(transport) ? "UDP" : "TCP",
+              ntohs(my_sockaddr.in6.sin6_port));
+          }
+        }
+      }
+    }
+     
+    if (IS_UDP(transport)) {
+      int c;
+
+      for (c = 0; c < settings.num_threads_per_udp; c++) {
+        /* Allocate one UDP file descriptor per worker thread;
+         * this allows "stats conns" to separately list multiple
+         * parallel UDP requests in progress.
+         *
+         * The dispatch code round-robins new connection requests
+         * among threads, so this is guaranteed to assign one
+         * FD to each thread.
+         */
+        int per_thread_fd;
+        if (c == 0) {
+          per_thread_fd = sfd;
+        }
+        else {
+#ifndef _WIN32
+          per_thread_fd = dup(sfd);
+          if (per_thread_fd < 0) {
+            perror("Failed to duplicate file descriptor");
+            exit(EXIT_FAILURE);
+          }
+#endif
+        }
+        dispatch_conn_new(per_thread_fd, conn_read,
+          EV_READ | EV_PERSIST,
+          UDP_READ_BUFFER_SIZE, transport, NULL);
+      }
+    }
+    else {
+      if (!(listen_conn_add = conn_new(sfd, conn_listening,
+        EV_READ | EV_PERSIST, 1,
+        transport, main_base, NULL))) {
+        fprintf(stderr, "failed to create listening connection\n");
+        exit(EXIT_FAILURE);
+      }
+#ifdef TLS
+      listen_conn_add->ssl_enabled = ssl_enabled;
+#else
+      assert(ssl_enabled == false);
+#endif
+      listen_conn_add->next = listen_conn;
+      listen_conn = listen_conn_add;
 		}
 	}
 
+  freeaddrinfo(ai);
 
+  /* Return zero if we detected no errors in starting up connections */
 	return 0;
 }
 
 int conn_listener::server_sockets(int port, enum network_transport transport, FILE *portnumber_file)
 {
-	bool ssl_enabled = false;
+  bool ssl_enabled = false;
 
 #ifdef TLS
 	const char *notls = "notls";
@@ -279,8 +382,11 @@ int conn_listener::server_sockets(int port, enum network_transport transport, FI
 		// tokenize them and bind to each one of them..
 		char *b;
 		int ret = 0;
-		char *list = _strdup(settings.inter);
-
+#ifndef _WIN32 
+		char *list = strdup(settings.inter);
+#else
+    char *list = _strdup(settings.inter);
+#endif
 		if (list == NULL) {
 			fprintf(stderr, "Failed to allocate memory for parsing server interface string\n");
 			return 1;
