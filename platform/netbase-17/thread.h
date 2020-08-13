@@ -26,7 +26,7 @@ namespace netb {
 	public:
 		thread(int nthreads);
 	
-		~thread();
+		virtual ~thread();
 
 		void memcached_thread_init(int nthreads, void *arg);
 		void setup_thread(LIBEVENT_THREAD *me);
@@ -43,7 +43,7 @@ namespace netb {
 		/*
 		 * Creates a worker thread.
 		 */
-		static void create_worker(void *(*func)(void *), void *arg);
+		void create_worker(void *(*func)(void *), void *arg);
 
 		/*
 		 * Worker thread: main event loop
@@ -57,10 +57,17 @@ namespace netb {
 		static void thread_libevent_process(int fd, short which, void *arg);
 
 
-		static CQ_ITEM *cqi_new(void);
+		CQ_ITEM *cqi_new(void);
 
-		static void cqi_free(CQ_ITEM *item);
-	protected:
+		void cqi_free(CQ_ITEM *item);
+
+
+
+    virtual conn *conn_new(const int sfd, const enum conn_states init_state, const int event_flags, const int read_buffer_size,
+      enum network_transport transport, struct event_base *base, void *ssl) = 0;
+
+  
+  protected:
 		/* Connection lock around accepting new connections */
 		std::mutex conn_lock;
 	
@@ -71,8 +78,8 @@ namespace netb {
 		std::mutex  worker_hang_lock;
 	
 		/* Free list of CQ_ITEM structs */
-		static CQ_ITEM *cqi_freelist;
-		static std::mutex  cqi_freelist_lock;
+		CQ_ITEM *cqi_freelist;
+		std::mutex  cqi_freelist_lock;
 	
 		std::mutex  *item_locks;
 		/* size of the item lock hash table */
@@ -91,8 +98,8 @@ namespace netb {
 		 * Each libevent instance has a wakeup pipe, which other threads
 		 * can use to signal that they've put a new connection on its queue.
 		 */
-		//static LIBEVENT_THREAD *threads;
-		std::vector<LIBEVENT_THREAD> threads;
+		LIBEVENT_THREAD *threads;
+		//std::vector<LIBEVENT_THREAD> threads;
 	};
 }
 

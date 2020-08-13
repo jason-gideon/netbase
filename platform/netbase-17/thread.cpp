@@ -2,10 +2,6 @@
 
 namespace netb {
 
-	CQ_ITEM * thread::cqi_freelist = nullptr;
-
-	std::mutex thread::cqi_freelist_lock;
-
 	int thread::init_count = 0;
   std::mutex thread::init_lock;
 	std::condition_variable thread::init_cond;
@@ -25,30 +21,36 @@ namespace netb {
 	 * nthreads  Number of worker event handler threads to spawn
 	 */
 	void thread::memcached_thread_init(int nthreads, void *arg) {
+
+    cqi_freelist = NULL;
+
+    threads = (LIBEVENT_THREAD*) calloc(nthreads, sizeof(LIBEVENT_THREAD));
+    if (!threads) {
+      perror("Can't allocate thread descriptors");
+      exit(1);
+    }
+
 		for (int i = 0; i < nthreads; i++) {
-			LIBEVENT_THREAD thread;
 			int fds[2];
 			if (evutil_socketpair(AF_UNIX, SOCK_STREAM, 0, fds) < 0) {
 				perror("Can't create notify pipe");
 				exit(1);
 			}
 
-			thread.notify_receive_fd = fds[0];
-			thread.notify_send_fd = fds[1];
+      threads[i].notify_receive_fd = fds[0];
+      threads[i].notify_send_fd = fds[1];
 #ifdef EXTSTORE
 			threads[i].storage = arg;
 #endif
-			setup_thread(&thread);
+      setup_thread(&threads[i]);
 			/* Reserve three fds for the libevent base, and two for the pipe */
 			//stats_state.reserved_fds += 5;
-
-			threads.emplace_back(std::move(thread));
 		}
 
-		/* Create threads after we've done all the libevent setup. */
-		for (auto thrd : threads) {
-			create_worker(worker_libevent, &thrd);
-		}
+    /* Create threads after we've done all the libevent setup. */
+    for (int i = 0; i < nthreads; i++) {
+      create_worker(worker_libevent, &threads[i]);
+    }
 		
 		/* Wait for all the threads to set themselves up before returning. */
 		wait_for_thread_registration(nthreads);
@@ -170,7 +172,7 @@ namespace netb {
 
 		int tid = (last_thread + 1) % 4;
 
-		LIBEVENT_THREAD *thread = &threads[tid];
+    LIBEVENT_THREAD *thread = threads + tid;
 
 		last_thread = tid;
 
@@ -386,5 +388,12 @@ namespace netb {
 		item->next = cqi_freelist;
 		cqi_freelist = item;
 	}
+
+  conn * thread::conn_new(const int sfd, enum conn_states init_state,
+    const int event_flags,
+    const int read_buffer_size, enum network_transport transport,
+    struct event_base *base, void *ssl) {
+    return nullptr;
+  }
 
 }
