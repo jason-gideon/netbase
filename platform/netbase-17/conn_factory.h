@@ -30,6 +30,11 @@ public:
   */
   int total();
 
+public:
+  int maxfd() {
+    return max_fds;
+  }
+
 protected:
   /** ÆÁ±Î¹¹Ôìº¯Êý */
   conn_factory(int maxconns);

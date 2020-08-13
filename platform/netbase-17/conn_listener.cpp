@@ -7,25 +7,6 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdarg.h>
-/* Avoid warnings on solaris, where isspace() is an index into an array, and gcc uses signed chars */
-#define xisspace(c) isspace((unsigned char)c)
-bool safe_strtol(const char *str, int32_t *out) {
-	assert(out != NULL);
-	errno = 0;
-	*out = 0;
-	char *endptr;
-	long l = strtol(str, &endptr, 10);
-	if ((errno == ERANGE) || (str == endptr)) {
-		return false;
-	}
-
-	if (xisspace(*endptr) || (*endptr == '\0' && endptr != str)) {
-		*out = l;
-		return true;
-	}
-	return false;
-}
-
 
 
 
@@ -897,7 +878,8 @@ int conn_listener::server_sockets(int port, enum network_transport transport, FI
 				if (strchr(s + 1, ':') == NULL || h != NULL) {
 					*s = '\0';
 					++s;
-					if (!safe_strtol(s, &the_port)) {
+					//if (!safe_strtol(s, &the_port)) 
+          {
 						fprintf(stderr, "Invalid port number: \"%s\"", s);
 						free(list);
 						return 1;

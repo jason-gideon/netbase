@@ -37,6 +37,11 @@ void conn_factory::conn_init(void) {
 #endif	
 }
 
+conn_factory::~conn_factory()
+{
+
+}
+
 conn * conn_factory::conn_new(int sfd) {
   conn* c;
 
@@ -59,6 +64,8 @@ conn * conn_factory::conn_new(int sfd) {
 void conn_factory::conn_free(conn *c)
 {
   if (c) {
+    std::lock_guard<std::mutex> lck(mtx);
+
     assert(c != NULL);
     assert(c->sfd >= 0 && c->sfd < max_fds);
 

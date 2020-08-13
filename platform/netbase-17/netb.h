@@ -98,6 +98,7 @@
 *netb related init
 */
 #include "conn_queue.h"
+#include "base_socket.h"
 
 #ifdef _WIN32
 
@@ -142,14 +143,14 @@
 
 typedef unsigned int size_t;
 typedef int  ssize_t;
-
-#define socket_destroy(fd) closesocket(fd)
-#define socket_read(fd, buf, len) recv(fd, buf, sizeof buf, 0)
-#define socket_write(fd, buf, len) send(fd, buf, sizeof buf, 0)
-#else
-#define socket_destroy(fd) close(fd)
-#define socket_read(fd, buf, len) read(fd, buf, sizeof buf)
-#define socket_write(fd, buf, len) write(fd, buf, sizeof buf)
+// 
+// #define socket_destroy(fd) closesocket(fd)
+// #define socket_read(fd, buf, len) recv(fd, buf, sizeof buf, 0)
+// #define socket_write(fd, buf, len) send(fd, buf, sizeof buf, 0)
+// #else
+// #define socket_destroy(fd) close(fd)
+// #define socket_read(fd, buf, len) read(fd, buf, sizeof buf)
+// #define socket_write(fd, buf, len) write(fd, buf, sizeof buf)
 #endif // !_WIN32
 
 
@@ -730,7 +731,7 @@ typedef struct {
 //#ifdef TLS
 //	char   *ssl_wbuf;
 //#endif
-
+  void    *listener;  /* Pointer to the l object serving this connection */
 } LIBEVENT_THREAD;
 //
 ///**
@@ -995,3 +996,6 @@ struct conn {
 //
 //#define likely(x)       __builtin_expect((x),1)
 //#define unlikely(x)     __builtin_expect((x),0)
+
+
+

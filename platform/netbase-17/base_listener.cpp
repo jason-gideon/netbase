@@ -9,6 +9,26 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdarg.h>
+
+/**
+ * Convert a state name to a human readable form.
+ */
+static const char *state_text(enum conn_states state) {
+  const char* const statenames[] = { "conn_listening",
+                                     "conn_new_cmd",
+                                     "conn_waiting",
+                                     "conn_read",
+                                     "conn_parse_cmd",
+                                     "conn_write",
+                                     "conn_nread",
+                                     "conn_swallow",
+                                     "conn_closing",
+                                     "conn_mwrite",
+                                     "conn_closed",
+                                     "conn_watch" };
+  return statenames[state];
+}
+
 /* Avoid warnings on solaris, where isspace() is an index into an array, and gcc uses signed chars */
 #define xisspace(c) isspace((unsigned char)c)
 bool safe_strtol(const char *str, int32_t *out) {
@@ -30,9 +50,6 @@ bool safe_strtol(const char *str, int32_t *out) {
 
 
 
-struct settings base_listener::settings;
-
-conn ** base_listener::conns = nullptr;
 int base_listener::max_fds = 0;
 
 bool base_listener::stop_main_loop = false;
@@ -46,18 +63,20 @@ struct event_base * base_listener::main_base = nullptr;
 
 
 base_listener::base_listener()
-  : netb::thread(4)
+{
+
+}
+
+base_listener::base_listener(struct settings& settings, conn_factory* factory)
+  : settings(settings)
+  , factory(factory)
 {
 
 }
 
 bool base_listener::init()
 {
-  memset(&settings, 0, sizeof settings);
-  settings.port = 11211;
-  settings.udpport = 22422;
-  settings.backlog = 1000;
-  settings.maxconns = 10000;
+
 
 
 
@@ -74,7 +93,7 @@ bool base_listener::init()
   main_base = event_init();
 #endif
 
-  conn_init();
+
   memcached_thread_init(4, this);
 
 
@@ -131,6 +150,17 @@ bool base_listener::init()
   }
 
   return false;
+}
+
+void base_listener::loop()
+{
+  /* enter the event loop */
+  while (!stop_main_loop) {
+    if (event_base_loop(main_base, EVLOOP_ONCE) != 0) {
+      //retval = EXIT_FAILURE;
+      break;
+    }
+  }
 }
 
 void base_listener::maximize_sndbuf(const int sfd)
@@ -472,46 +502,41 @@ conn * base_listener::conn_new(const int sfd, enum conn_states init_state,
   struct event_base *base, void *ssl) {
   conn *c;
 
-  assert(sfd >= 0 && sfd < max_fds);
-  c = conns[sfd];
+  assert(sfd >= 0 && sfd < factory->maxfd());
+  c = factory->conn_new(sfd);
 
   if (NULL == c) {
-    if (!(c = (conn *)calloc(1, sizeof(conn)))) {
-      //STATS_LOCK();
-// 			stats.malloc_fails++;
-// 			STATS_UNLOCK();
-      fprintf(stderr, "Failed to allocate connection object\n");
-      return NULL;
-    }
-    //MEMCACHED_CONN_CREATE(c);
-    c->read = NULL;
-    c->sendmsg = NULL;
-    c->write = NULL;
-    c->rbuf = NULL;
-
-    c->rsize = read_buffer_size;
-
-    // UDP connections use a persistent static buffer.
-    if (c->rsize) {
-      c->rbuf = (char *)malloc((size_t)c->rsize);
-    }
-
-    if (c->rsize && c->rbuf == NULL) {
-      conn_free(c);
-      // 			STATS_LOCK();
-      // 			stats.malloc_fails++;
-      // 			STATS_UNLOCK();
-      fprintf(stderr, "Failed to allocate buffers for connection\n");
-      return NULL;
-    }
-
-    // 		STATS_LOCK();
-    // 		stats_state.conn_structs++;
-    // 		STATS_UNLOCK();
-
-    c->sfd = sfd;
-    conns[sfd] = c;
+    fprintf(stderr, "Failed to allocate connection object\n");
+    return NULL;
   }
+
+  //MEMCACHED_CONN_CREATE(c);
+  c->read = NULL;
+  c->sendmsg = NULL;
+  c->write = NULL;
+  c->rbuf = NULL;
+
+  c->rsize = read_buffer_size;
+
+  // UDP connections use a persistent static buffer.
+  if (c->rsize) {
+    c->rbuf = (char *)malloc((size_t)c->rsize);
+  }
+
+  if (c->rsize && c->rbuf == NULL) {
+    factory->conn_free(c);
+    // 			STATS_LOCK();
+    // 			stats.malloc_fails++;
+    // 			STATS_UNLOCK();
+    fprintf(stderr, "Failed to allocate buffers for connection\n");
+    return NULL;
+  }
+
+  // 		STATS_LOCK();
+  // 		stats_state.conn_structs++;
+  // 		STATS_UNLOCK();
+
+  c->sfd = sfd;
 
   c->transport = transport;
   //c->protocol = settings.binding_protocol;
@@ -654,65 +679,407 @@ conn * base_listener::conn_new(const int sfd, enum conn_states init_state,
 
 void base_listener::event_handler(const int fd, const short which, void *arg)
 {
+  conn *c;
 
+  c = (conn *)arg;
+  assert(c != NULL);
+
+  c->which = which;
+
+  /* sanity */
+  if (fd != c->sfd) {
+    //if (settings.verbose > 0)
+      fprintf(stderr, "Catastrophic: event fd doesn't match conn fd!\n");
+    conn_close(c);
+    return;
+  }
+
+  drive_machine(c);
+
+  /* wait for next event */
+  return;
 }
 
-void base_listener::conn_init(void)
+void base_listener::conn_close(conn *c)
 {
-#ifndef _WIN32
-  /* We're unlikely to see an FD much higher than maxconns. */
-  int next_fd = dup(1);
-  if (next_fd < 0) {
-    perror("Failed to duplicate file descriptor\n");
-    exit(1);
-  }
-  int headroom = 10;      /* account for extra unexpected open FDs */
-  struct rlimit rl;
+  assert(c != NULL);
 
-  max_fds = settings.maxconns + headroom + next_fd;
+  /* delete the event, the socket and the conn */
+  event_del(&c->event);
 
-  /* But if possible, get the actual highest FD we can possibly ever see. */
-  if (getrlimit(RLIMIT_NOFILE, &rl) == 0) {
-    max_fds = rl.rlim_max;
-  }
-  else {
-    fprintf(stderr, "Failed to query maximum file descriptor; "
-      "falling back to maxconns\n");
+  //if (settings.verbose > 1)
+    fprintf(stderr, "<%d connection closed.\n", c->sfd);
+
+  conn_cleanup(c);
+
+  // force release of read buffer.
+  if (c->thread) {
+    c->rbytes = 0;
+    //rbuf_release(c);
   }
 
-  close(next_fd);
-
-  if ((conns = (conn**)calloc(max_fds, sizeof(conn *))) == NULL) {
-    fprintf(stderr, "Failed to allocate connection structures\n");
-    /* This is unrecoverable so bail out early. */
-    exit(1);
-  }
-#else
-  max_fds = settings.maxconns;
-  if ((conns = (conn**)calloc(max_fds, sizeof(conn *))) == NULL) {
-    fprintf(stderr, "Failed to allocate connection structures\n");
-    /* This is unrecoverable so bail out early. */
-    exit(1);
-  }
-#endif	
-
-}
-
-void base_listener::conn_free(conn *c)
-{
-  if (c) {
-    assert(c != NULL);
-    assert(c->sfd >= 0 && c->sfd < max_fds);
-
-    //MEMCACHED_CONN_DESTROY(c);
-    conns[c->sfd] = NULL;
-    if (c->rbuf)
-      free(c->rbuf);
+  //MEMCACHED_CONN_RELEASE(c->sfd);
+  conn_set_state(c, conn_closed);
 #ifdef TLS
-    if (c->ssl_wbuf)
-      c->ssl_wbuf = NULL;
+  if (c->ssl) {
+    SSL_shutdown(c->ssl);
+    SSL_free(c->ssl);
+  }
+#endif
+  socket_destroy(c->sfd);
+//   pthread_mutex_lock(&conn_lock);
+//   allow_new_conns = true;
+//   pthread_mutex_unlock(&conn_lock);
+
+//   STATS_LOCK();
+//   stats_state.curr_conns--;
+//   STATS_UNLOCK();
+
+  return;
+}
+
+void base_listener::conn_cleanup(conn *c)
+{
+  assert(c != NULL);
+
+  //conn_release_items(c);
+
+//   if (c->sasl_conn) {
+//     assert(settings.sasl);
+//     sasl_dispose(&c->sasl_conn);
+//     c->sasl_conn = NULL;
+//   }
+
+  if (IS_UDP(c->transport)) {
+    conn_set_state(c, conn_read);
+  }
+}
+
+void base_listener::conn_set_state(conn *c, enum conn_states state)
+{
+  assert(c != NULL);
+  assert(state >= conn_listening && state < conn_max_state);
+
+  if (state != c->state) {
+    //if (settings.verbose > 2) {
+      fprintf(stderr, "%d: going from %s to %s\n",
+        c->sfd, state_text(c->state),
+        state_text(state));
+    //}
+
+    if (state == conn_write || state == conn_mwrite) {
+      //MEMCACHED_PROCESS_COMMAND_END(c->sfd, c->wbuf, c->wbytes);
+    }
+    c->state = state;
+  }
+}
+
+void base_listener::drive_machine(conn *c)
+{
+  bool stop = false;
+  int sfd;
+  socklen_t addrlen;
+  struct sockaddr_storage addr;
+  int nreqs = 3;
+  int res;
+  const char *str;
+#ifdef HAVE_ACCEPT4
+  static int  use_accept4 = 1;
+#else
+  static int  use_accept4 = 0;
 #endif
 
-    free(c);
+  assert(c != NULL);
+
+  while (!stop) {
+    switch (c->state) {
+    case conn_listening: {
+      addrlen = sizeof(addr);
+#ifdef HAVE_ACCEPT4
+      if (use_accept4) {
+        sfd = accept4(c->sfd, (struct sockaddr *)&addr, &addrlen, SOCK_NONBLOCK);
+      }
+      else {
+        sfd = accept(c->sfd, (struct sockaddr *)&addr, &addrlen);
+      }
+#else
+      sfd = accept(c->sfd, (struct sockaddr *)&addr, &addrlen);
+#endif
+      if (sfd == -1) {
+        if (use_accept4 && errno == ENOSYS) {
+          use_accept4 = 0;
+          continue;
+        }
+        perror(use_accept4 ? "accept4()" : "accept()");
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+          /* these are transient, so don't log anything */
+          stop = true;
+        }
+        else if (errno == EMFILE) {
+          //if (settings.verbose > 0)
+          fprintf(stderr, "Too many open connections\n");
+          //accept_new_conns(false);
+          stop = true;
+        }
+        else {
+          perror("accept()");
+          stop = true;
+        }
+        break;
+      }
+      if (!use_accept4) {
+        //         if (fcntl(sfd, F_SETFL, fcntl(sfd, F_GETFL) | O_NONBLOCK) < 0) {
+        //           perror("setting O_NONBLOCK");
+        //           close(sfd);
+        //           break;
+        //         }
+      }
+
+      bool reject = false;
+      //      if (settings.maxconns_fast) {
+      //         STATS_LOCK();
+      //         reject = stats_state.curr_conns + stats_state.reserved_fds >= settings.maxconns - 1;
+      //         if (reject) {
+      //           stats.rejected_conns++;
+      //         }
+      //         STATS_UNLOCK();
+      //       }
+      //       else {
+      //         reject = false;
+      //       }
+
+      if (reject) {
+        str = "ERROR Too many open connections\r\n";
+        res = socket_write(sfd, str, strlen(str));
+        socket_destroy(sfd);
+      }
+      else {
+        void *ssl_v = NULL;
+#ifdef TLS
+        SSL *ssl = NULL;
+        if (c->ssl_enabled) {
+          assert(IS_TCP(c->transport) && settings.ssl_enabled);
+
+          if (settings.ssl_ctx == NULL) {
+            if (settings.verbose) {
+              fprintf(stderr, "SSL context is not initialized\n");
+            }
+            close(sfd);
+            break;
+          }
+          SSL_LOCK();
+          ssl = SSL_new(settings.ssl_ctx);
+          SSL_UNLOCK();
+          if (ssl == NULL) {
+            if (settings.verbose) {
+              fprintf(stderr, "Failed to created the SSL object\n");
+            }
+            close(sfd);
+            break;
+          }
+          SSL_set_fd(ssl, sfd);
+          int ret = SSL_accept(ssl);
+          if (ret < 0) {
+            int err = SSL_get_error(ssl, ret);
+            if (err == SSL_ERROR_SYSCALL || err == SSL_ERROR_SSL) {
+              if (settings.verbose) {
+                fprintf(stderr, "SSL connection failed with error code : %d : %s\n", err, strerror(errno));
+              }
+              SSL_free(ssl);
+              close(sfd);
+              break;
+            }
+          }
+        }
+        ssl_v = (void*)ssl;
+#endif
+
+        dispatch_conn_new(sfd, conn_new_cmd, EV_READ | EV_PERSIST,
+          READ_BUFFER_CACHED, c->transport, ssl_v);
+      }
+
+      stop = true;
+      break;
+    }
+    case conn_waiting:
+      fprintf(stderr, "conn_waiting\n");
+      rbuf_release(c);
+      if (!update_event(c, EV_READ | EV_PERSIST)) {
+       // if (settings.verbose > 0)
+          fprintf(stderr, "Couldn't update event\n");
+        conn_set_state(c, conn_closing);
+        break;
+      }
+
+      conn_set_state(c, conn_read);
+      stop = true;
+      break;
+
+    case conn_read:
+      fprintf(stderr, "conn_read\n");
+      if (!IS_UDP(c->transport)) {
+        // Assign a read buffer if necessary.
+        if (!rbuf_alloc(c)) {
+          // TODO: Some way to allow for temporary failures.
+          conn_set_state(c, conn_closing);
+          break;
+        }
+        //res = try_read_network(c);
+      }
+      else {
+        // UDP connections always have a static buffer.
+        //res = try_read_udp(c);
+      }
+
+      break;
+
+    case conn_parse_cmd:
+      fprintf(stderr, "conn_parse_cmd\n");
+      break;
+
+    case conn_new_cmd:
+      fprintf(stderr, "conn_new_cmd\n");
+      /* Only process nreqs at a time to avoid starving other
+                     connections */
+
+      --nreqs;
+      if (nreqs >= 0) {
+        reset_cmd_handler(c);
+      }
+//       else if (c->resp_head) {
+//         // flush response pipe on yield.
+//         conn_set_state(c, conn_mwrite);
+//       }
+      else {
+//         pthread_mutex_lock(&c->thread->stats.mutex);
+//         c->thread->stats.conn_yields++;
+//         pthread_mutex_unlock(&c->thread->stats.mutex);
+        if (c->rbytes > 0) {
+          /* We have already read in data into the input buffer,
+             so libevent will most likely not signal read events
+             on the socket (unless more data is available. As a
+             hack we should just put in a request to write data,
+             because that should be possible ;-)
+          */
+          if (!update_event(c, EV_WRITE | EV_PERSIST)) {
+            //if (settings.verbose > 0)
+              fprintf(stderr, "Couldn't update event\n");
+            conn_set_state(c, conn_closing);
+            break;
+          }
+        }
+        stop = true;
+      }
+      break;
+
+    case conn_nread:
+      fprintf(stderr, "conn_nread\n");
+      break;
+
+    case conn_swallow:
+      fprintf(stderr, "conn_swallow\n");
+      break;
+
+    case conn_write:
+    case conn_mwrite:
+      fprintf(stderr, "conn_mwrite\n");
+      break;
+    case conn_closing:
+      fprintf(stderr, "conn_closing\n");
+      if (IS_UDP(c->transport))
+        conn_cleanup(c);
+      else
+        conn_close(c);
+      stop = true;
+      break;
+
+    case conn_closed:
+      /* This only happens if dormando is an idiot. */
+      fprintf(stderr, "conn_closed\n");
+      abort();
+      break;
+
+    case conn_watch:
+      fprintf(stderr, "conn_watch\n");
+      /* We handed off our connection to the logger thread. */
+      stop = true;
+      break;
+    case conn_max_state:
+      fprintf(stderr, "conn_max_state\n");
+      assert(false);
+      break;
+    }
+  }
+}
+
+void base_listener::reset_cmd_handler(conn *c)
+{
+  c->cmd = -1;
+  //c->substate = bin_no_state;
+  if (c->item != NULL) {
+    // TODO: Any other way to get here?
+    // SASL auth was mistakenly using it. Nothing else should?
+    //item_remove(c->item);
+    c->item = NULL;
+  }
+  if (c->rbytes > 0) {
+    conn_set_state(c, conn_parse_cmd);
+  }
+//   else if (c->resp_head) {
+//     conn_set_state(c, conn_mwrite);
+//   }
+  else {
+    conn_set_state(c, conn_waiting);
+  }
+}
+
+bool base_listener::update_event(conn *c, const int new_flags)
+{
+  assert(c != NULL);
+
+  struct event_base *base = c->event.ev_base;
+  if (c->ev_flags == new_flags)
+    return true;
+  if (event_del(&c->event) == -1) return false;
+
+  event_assign(&c->event, base, c->sfd, new_flags, event_handler, (void *)c);
+//   event_set(&c->event, c->sfd, new_flags, event_handler, (void *)c);
+//   event_base_set(base, &c->event);
+  c->ev_flags = new_flags;
+  if (event_add(&c->event, 0) == -1) return false;
+  return true;
+}
+
+bool base_listener::rbuf_alloc(conn *c)
+{
+  if (c->rbuf == NULL) {
+    //c->rbuf = do_cache_alloc(c->thread->rbuf_cache);
+    if (!c->rbuf) {
+//       THR_STATS_LOCK(c);
+//       c->thread->stats.read_buf_oom++;
+//       THR_STATS_UNLOCK(c);
+      return false;
+    }
+    c->rsize = READ_BUFFER_SIZE;
+    c->rcurr = c->rbuf;
+  }
+  return true;
+}
+
+
+
+void base_listener::rbuf_release(conn *c)
+{
+  if (c->rbuf != NULL && c->rbytes == 0 && !IS_UDP(c->transport)) {
+    if (c->rbuf_malloced) {
+      free(c->rbuf);
+      c->rbuf_malloced = false;
+    }
+    else {
+      //do_cache_free(c->thread->rbuf_cache, c->rbuf);
+    }
+    c->rsize = 0;
+    c->rbuf = NULL;
+    c->rcurr = NULL;
   }
 }
