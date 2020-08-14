@@ -857,6 +857,10 @@ namespace netb {
 
     c->noreply = false;
 
+
+    c->write_and_go = init_state;
+    c->write_and_free = 0;
+
 #ifdef TLS
     if (ssl) {
       c->ssl = (SSL*)ssl;
@@ -922,7 +926,74 @@ namespace netb {
     return c;
   }
 
+  enum transmit_result listener::transmit(conn *c) {
+    assert(c != NULL);
 
+    if (c->msgcurr < c->msgused &&
+      c->msglist[c->msgcurr].msg_iovlen == 0) {
+      /* Finished writing the current msg; advance to the next. */
+      c->msgcurr++;
+    }
+    if (c->msgcurr < c->msgused) {
+      ssize_t res;
+      struct msghdr *m = &c->msglist[c->msgcurr];
+
+#ifdef _WIN32
+      int ret;
+      if (IS_UDP(c->transport)) {
+        ret = WSASendTo(c->sfd, (LPWSABUF)m->msg_iov, m->msg_iovlen, (LPDWORD)&res, 0, (const sockaddr*)m->msg_name, m->msg_namelen, NULL, NULL);
+      } else {
+        ret = WSASend(c->sfd, (LPWSABUF)m->msg_iov, m->msg_iovlen, (LPDWORD)&res, 0, NULL, NULL);
+      }
+      if (ret != SOCKET_ERROR) {
+#else
+      res = sendmsg(c->sfd, m, 0);
+      if (res > 0) {
+#endif
+//         pthread_mutex_lock(&c->thread->stats.mutex);
+//         c->thread->stats.bytes_written += res;
+//         pthread_mutex_unlock(&c->thread->stats.mutex);
+
+        /* We've written some of the data. Remove the completed
+           iovec entries from the list of pending writes. */
+        while (m->msg_iovlen > 0 && res >= m->msg_iov->iov_len) {
+          res -= m->msg_iov->iov_len;
+          m->msg_iovlen--;
+          m->msg_iov++;
+        }
+
+        /* Might have written just part of the last iovec entry;
+           adjust it so the next write will do the rest. */
+        if (res > 0) {
+          m->msg_iov->iov_base = (caddr_t)m->msg_iov->iov_base + res;
+          m->msg_iov->iov_len -= res;
+        }
+        return TRANSMIT_INCOMPLETE;
+      }
+      if (res == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+        if (!update_event(c, EV_WRITE | EV_PERSIST)) {
+          if (settings.verbose > 0)
+            fprintf(stderr, "Couldn't update event\n");
+          conn_set_state(c, conn_closing);
+          return TRANSMIT_HARD_ERROR;
+        }
+        return TRANSMIT_SOFT_ERROR;
+      }
+      /* if res == 0 or res == -1 and error is not EAGAIN or EWOULDBLOCK,
+         we have a real error, on which we close the connection */
+      if (settings.verbose > 0)
+        perror("Failed to write, and not due to blocking");
+
+      if (IS_UDP(c->transport))
+        conn_set_state(c, conn_read);
+      else
+        conn_set_state(c, conn_closing);
+      return TRANSMIT_HARD_ERROR;
+    }
+    else {
+      return TRANSMIT_COMPLETE;
+    }
+  }
 
   void listener::event_handler(const int fd, const short which, void *arg)
   {
@@ -1184,6 +1255,10 @@ namespace netb {
 
       case conn_parse_cmd:
         fprintf(stderr, "conn_parse_cmd\n");
+        if (try_read_command(c) == 0) {
+          /* wee need more data! */
+          conn_set_state(c, conn_waiting);
+        }
         break;
 
       case conn_new_cmd:
@@ -1230,9 +1305,65 @@ namespace netb {
         break;
 
       case conn_write:
+        /*
+         * We want to write out a simple response. If we haven't already,
+         * assemble it into a msgbuf list (this will be a single-entry
+         * list for TCP or a two-entry list for UDP).
+         */
+        if (c->iovused == 0 || (IS_UDP(c->transport) && c->iovused == 1)) {
+          if (add_iov(c, c->wcurr, c->wbytes) != 0) {
+            if (settings.verbose > 0)
+              fprintf(stderr, "Couldn't build response\n");
+            conn_set_state(c, conn_closing);
+            break;
+          }
+        }
+
+        /* fall through... */
       case conn_mwrite:
         fprintf(stderr, "conn_mwrite\n");
-        break;
+         if (IS_UDP(c->transport) && c->msgcurr == 0 /*&& build_udp_headers(c) != 0*/) {
+           if (settings.verbose > 0)
+             fprintf(stderr, "Failed to build UDP headers\n");
+           conn_set_state(c, conn_closing);
+           break;
+         }
+         
+         switch (transmit(c)) {
+         case TRANSMIT_COMPLETE:
+           if (c->state == conn_mwrite) {
+             //conn_release_items(c);
+             /* XXX:  I don't know why this wasn't the general case */
+//              if (c->protocol == binary_prot) {
+//                conn_set_state(c, c->write_and_go);
+//              }
+//              else {
+//                conn_set_state(c, conn_new_cmd);
+//              }
+           }
+           else if (c->state == conn_write) {
+             if (c->write_and_free) {
+               free(c->write_and_free);
+               c->write_and_free = 0;
+             }
+             conn_set_state(c, c->write_and_go);
+           }
+           else {
+             if (settings.verbose > 0)
+               fprintf(stderr, "Unexpected state %d\n", c->state);
+             conn_set_state(c, conn_closing);
+           }
+
+         case TRANSMIT_INCOMPLETE:
+         case TRANSMIT_HARD_ERROR:
+           break;                   /* Continue in state machine. */
+
+         case TRANSMIT_SOFT_ERROR:
+           stop = true;
+           break;
+         }
+         break;
+
       case conn_closing:
         fprintf(stderr, "conn_closing\n");
         if (IS_UDP(c->transport))
@@ -1395,6 +1526,211 @@ namespace netb {
       return READ_DATA_RECEIVED;
     }
     return READ_NO_DATA_RECEIVED;
+  }
+
+
+  int listener::try_read_command(conn *c) {
+    assert(c != NULL);
+    assert(c->rcurr <= (c->rbuf + c->rsize));
+    assert(c->rbytes > 0);
+
+    char str[] = "pongiungashd1171692631897623890";
+
+    size_t len;
+
+    assert(c != NULL);
+
+    if (c->noreply) {
+      if (settings.verbose > 1)
+        fprintf(stderr, ">%d NOREPLY %s\n", c->sfd, str);
+      c->noreply = false;
+      conn_set_state(c, conn_new_cmd);
+      return 0;
+    }
+
+    if (settings.verbose > 1)
+      fprintf(stderr, ">%d %s\n", c->sfd, str);
+
+    /* Nuke a partial output... */
+    c->msgcurr = 0;
+    c->msgused = 0;
+    c->iovused = 0;
+    add_msghdr(c);
+
+    len = strlen(str);
+    if ((len + 2) > c->wsize) {
+      /* ought to be always enough. just fail for simplicity */
+      //str = "SERVER_ERROR output line too long";
+      len = strlen(str);
+    }
+
+    memcpy(c->wbuf, str, len);
+    memcpy(c->wbuf + len, "\r\n", 2);
+    c->wbytes = len + 2;
+    c->wcurr = c->wbuf;
+
+    conn_set_state(c, conn_write);
+    c->write_and_go = conn_new_cmd;
+    return 1;
+
+    return 0;
+  }
+
+  /*
+   * Ensures that there is room for another struct iovec in a connection's
+   * iov list.
+   *
+   * Returns 0 on success, -1 on out-of-memory.
+   */
+  int listener::ensure_iov_space(conn *c)
+  {
+    assert(c != NULL);
+
+    if (c->iovused >= c->iovsize) {
+      int i, iovnum;
+      struct iovec *new_iov = (struct iovec *)realloc(c->iov,
+        (c->iovsize * 2) * sizeof(struct iovec));
+      if (!new_iov) {
+//         STATS_LOCK();
+//         stats.malloc_fails++;
+//         STATS_UNLOCK();
+        return -1;
+      }
+      c->iov = new_iov;
+      c->iovsize *= 2;
+
+      /* Point all the msghdr structures at the new list. */
+      for (i = 0, iovnum = 0; i < c->msgused; i++) {
+        c->msglist[i].msg_iov = &c->iov[iovnum];
+        iovnum += c->msglist[i].msg_iovlen;
+      }
+    }
+
+    return 0;
+  }
+
+  /*
+   * Adds data to the list of pending data that will be written out to a
+   * connection.
+   *
+   * Returns 0 on success, -1 on out-of-memory.
+   * Note: This is a hot path for at least ASCII protocol. While there is
+   * redundant code in splitting TCP/UDP handling, any reduction in steps has a
+   * large impact for TCP connections.
+   */
+  int listener::add_iov(conn *c, const void *buf, int len) {
+    struct msghdr *m;
+    int leftover;
+
+    assert(c != NULL);
+
+    if (IS_UDP(c->transport)) {
+      do {
+        m = &c->msglist[c->msgused - 1];
+
+        /*
+         * Limit UDP packets to UDP_MAX_PAYLOAD_SIZE bytes.
+         */
+
+         /* We may need to start a new msghdr if this one is full. */
+        if (m->msg_iovlen == IOV_MAX ||
+          (c->msgbytes >= UDP_MAX_PAYLOAD_SIZE)) {
+          add_msghdr(c);
+          m = &c->msglist[c->msgused - 1];
+        }
+
+        if (ensure_iov_space(c) != 0)
+          return -1;
+
+        /* If the fragment is too big to fit in the datagram, split it up */
+        if (len + c->msgbytes > UDP_MAX_PAYLOAD_SIZE) {
+          leftover = len + c->msgbytes - UDP_MAX_PAYLOAD_SIZE;
+          len -= leftover;
+        }
+        else {
+          leftover = 0;
+        }
+
+        m = &c->msglist[c->msgused - 1];
+        m->msg_iov[m->msg_iovlen].iov_base = (void *)buf;
+        m->msg_iov[m->msg_iovlen].iov_len = len;
+
+        c->msgbytes += len;
+        c->iovused++;
+        m->msg_iovlen++;
+
+        buf = ((char *)buf) + len;
+        len = leftover;
+      } while (leftover > 0);
+    }
+    else {
+      /* Optimized path for TCP connections */
+      m = &c->msglist[c->msgused - 1];
+      if (m->msg_iovlen == IOV_MAX) {
+        add_msghdr(c);
+        m = &c->msglist[c->msgused - 1];
+      }
+
+      if (ensure_iov_space(c) != 0)
+        return -1;
+
+      m->msg_iov[m->msg_iovlen].iov_base = (void *)buf;
+      m->msg_iov[m->msg_iovlen].iov_len = len;
+      c->msgbytes += len;
+      c->iovused++;
+      m->msg_iovlen++;
+    }
+
+    return 0;
+  }
+
+
+  /*
+   * Adds a message header to a connection.
+   *
+   * Returns 0 on success, -1 on out-of-memory.
+   */
+  int listener::add_msghdr(conn *c)
+  {
+
+    struct msghdr *msg;
+
+    assert(c != NULL);
+
+    if (c->msgsize == c->msgused) {
+      msg = (struct msghdr *)realloc(c->msglist, c->msgsize * 2 * sizeof(struct msghdr));
+      if (!msg) {
+//         STATS_LOCK();
+//         stats.malloc_fails++;
+//         STATS_UNLOCK();
+        return -1;
+      }
+      c->msglist = msg;
+      c->msgsize *= 2;
+    }
+
+    msg = c->msglist + c->msgused;
+
+    /* this wipes msg_iovlen, msg_control, msg_controllen, and
+       msg_flags, the last 3 of which aren't defined on solaris: */
+    memset(msg, 0, sizeof(struct msghdr));
+
+    msg->msg_iov = &c->iov[c->iovused];
+
+    if (IS_UDP(c->transport) && c->request_addr_size > 0) {
+      msg->msg_name = &c->request_addr;
+      msg->msg_namelen = c->request_addr_size;
+    }
+
+    c->msgbytes = 0;
+    c->msgused++;
+
+    if (IS_UDP(c->transport)) {
+      /* Leave room for the UDP header, which we'll fill in later. */
+      return add_iov(c, NULL, UDP_HEADER_SIZE);
+    }
+
+    return 0;
   }
 
 }

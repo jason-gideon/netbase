@@ -24,18 +24,6 @@
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="evt_loop.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="task_base.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="evt_watcher.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="base_listener.cpp">
-      <Filter>include</Filter>
-    </ClCompile>
     <ClCompile Include="qcm_factory.cpp">
       <Filter>include</Filter>
     </ClCompile>
@@ -149,19 +137,7 @@
     <ClInclude Include="..\..\thrid\libevent\include\event2\watch.h">
       <Filter>thrid\libevent\event2</Filter>
     </ClInclude>
-    <ClInclude Include="evt_loop.h">
-      <Filter>include</Filter>
-    </ClInclude>
-    <ClInclude Include="task_base.h">
-      <Filter>include</Filter>
-    </ClInclude>
-    <ClInclude Include="evt_watcher.h">
-      <Filter>include</Filter>
-    </ClInclude>
     <ClInclude Include="netb.h">
-      <Filter>include</Filter>
-    </ClInclude>
-    <ClInclude Include="base_listener.h">
       <Filter>include</Filter>
     </ClInclude>
     <ClInclude Include="conn_queue.h">

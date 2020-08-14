@@ -63,8 +63,15 @@ namespace netb {
 
 
   protected:
+    static enum transmit_result transmit(conn *c);
+
     static enum try_read_result try_read_network(conn *c);
     static enum try_read_result try_read_udp(conn *c);
+    static int try_read_command(conn *c);
+
+    static int ensure_iov_space(conn *c);
+    static int add_iov(conn *c, const void *buf, int len);
+    static int add_msghdr(conn *c);
 
     static bool update_event(conn *c, const int new_flags);
 

@@ -164,15 +164,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="base_listener.cpp" />
     <ClCompile Include="base_socket.cpp" />
     <ClCompile Include="conn_factory.cpp" />
     <ClCompile Include="cqi.cpp" />
-    <ClCompile Include="evt_loop.cpp" />
-    <ClCompile Include="evt_watcher.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="qcm_factory.cpp" />
-    <ClCompile Include="task_base.cpp" />
     <ClCompile Include="listener.cpp" />
     <ClCompile Include="util.cpp" />
   </ItemGroup>
@@ -208,15 +204,11 @@
     <ClInclude Include="..\..\thrid\libevent\include\evhttp.h" />
     <ClInclude Include="..\..\thrid\libevent\include\evrpc.h" />
     <ClInclude Include="..\..\thrid\libevent\include\evutil.h" />
-    <ClInclude Include="base_listener.h" />
     <ClInclude Include="base_socket.h" />
     <ClInclude Include="conn_factory.h" />
     <ClInclude Include="conn_queue.h" />
     <ClInclude Include="cqi.h" />
-    <ClInclude Include="evt_loop.h" />
-    <ClInclude Include="evt_watcher.h" />
     <ClInclude Include="netb.h" />
-    <ClInclude Include="task_base.h" />
     <ClInclude Include="listener.h" />
     <ClInclude Include="util.h" />
   </ItemGroup>

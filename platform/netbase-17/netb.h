@@ -158,6 +158,7 @@
 
 typedef unsigned int size_t;
 typedef int  ssize_t;
+#define caddr_t unsigned int*
 // 
 // #define socket_destroy(fd) closesocket(fd)
 // #define socket_read(fd, buf, len) recv(fd, buf, sizeof buf, 0)
@@ -1093,4 +1094,11 @@ enum try_read_result {
   READ_NO_DATA_RECEIVED,
   READ_ERROR,            /** an error occurred (on the socket) (or client closed connection) */
   READ_MEMORY_ERROR      /** failed to allocate more memory */
+};
+
+enum transmit_result {
+  TRANSMIT_COMPLETE,   /** All done writing. */
+  TRANSMIT_INCOMPLETE, /** More data remaining to write. */
+  TRANSMIT_SOFT_ERROR, /** Can't write any more right now. */
+  TRANSMIT_HARD_ERROR  /** Can't write (c->state is set to conn_closing) */
 };
